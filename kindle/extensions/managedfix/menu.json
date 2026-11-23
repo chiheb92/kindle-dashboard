@@ -1,0 +1,22 @@
+{
+	"items": [
+	{
+		"name": "Verwaltetes Gerät entsperren",
+		"priority": -997,
+		"items": [
+		{
+			"name": "Entsperren + Neustart",
+			"priority": 1,
+			"action": "bin/fix.sh",
+			"exitmenu": true
+		},
+		{
+			"name": "Nur Status prüfen",
+			"priority": 2,
+			"action": "bin/check.sh",
+			"exitmenu": true
+		}
+		]
+	}
+	]
+}
