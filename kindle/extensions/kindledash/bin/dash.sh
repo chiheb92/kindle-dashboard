@@ -15,6 +15,17 @@ H=$(awk '/^N: Name=/{n=tolower($0)} /^H: Handlers=/{ if (n ~ /touch|cyttsp|zforc
 [ -n "$H" ] && TOUCH="/dev/input/$H"
 log "Touch-Gerät: ${TOUCH:-nicht gefunden}"
 
+# Called every second while waiting: rotates the market pages every ROTATE_SEC seconds (daytime only).
+tick() {
+	[ "$ROTATING" = "1" ] || return
+	[ "${NPAGES:-1}" -gt 1 ] || return
+	[ "${ROTATE_SEC:-0}" -gt 0 ] || return
+	[ $(($1 % ROTATE_SEC)) -eq 0 ] || return
+	PAGE=$((PAGE % NPAGES + 1))
+	show_page $PAGE
+	[ -n "$B" ] && corner "Akku $B %"
+}
+
 # Blocks until a touch event or until $1 seconds passed. 0 = touched, 1 = timeout / stop flag.
 wait_touch() {
 	secs=$1
@@ -22,8 +33,9 @@ wait_touch() {
 		t=0
 		while [ $t -lt "$secs" ]; do
 			[ -f "$STOPF" ] && return 1
-			sleep 5
-			t=$((t + 5))
+			sleep 1
+			t=$((t + 1))
+			tick $t
 		done
 		return 1
 	fi
@@ -40,6 +52,7 @@ wait_touch() {
 			kill $DD 2>/dev/null
 			return 1
 		fi
+		tick $t
 	done
 	kill $DD 2>/dev/null
 	return 1
@@ -99,7 +112,7 @@ while true; do
 		{ [ "$HOUR" -ge "$NIGHT_START" ] && [ "$HOUR" -lt "$NIGHT_END" ]; } && NIGHT=1
 	fi
 
-	if [ "$NIGHT" = "1" ]; then set_light "$LIGHT_NIGHT"; else set_light "$LIGHT_DAY"; fi
+	if [ "$NIGHT" = "1" ]; then set_light "$LIGHT_NIGHT"; ROTATING=0; else set_light "$LIGHT_DAY"; ROTATING=1; fi
 
 	if [ "$NIGHT" = "0" ] || [ ! -f "$IMG" ]; then
 		if wifi_on && fetch; then
@@ -125,10 +138,13 @@ while true; do
 		# first tap: ask for confirmation
 		say "Nochmal tippen = Dashboard beenden"
 		sleep 2
+		R=$ROTATING; ROTATING=0
 		if wait_touch 6; then
 			cleanup
 		fi
+		ROTATING=$R
 		show
+		[ "$PAGE" != "1" ] && show_page $PAGE
 		[ -n "$B" ] && corner "Akku $B %"
 	fi
 done

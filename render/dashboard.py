@@ -153,7 +153,7 @@ def fetch_stock(s):
     ref = meta.get("chartPreviousClose") or meta.get("previousClose") or closes[0]
     cur = meta.get("currency", "")
     # indices (^GDAXI, ^GSPC) are points, not money
-    unit = "" if s["symbol"].startswith("^") else {"EUR": "€", "USD": "$"}.get(cur, cur)
+    unit = "" if s["symbol"].startswith("^") else {"EUR": "€", "USD": "$", "JPY": "¥"}.get(cur, cur)
     ts = res.get("timestamp") or [0]
     day = datetime.fromtimestamp(ts[-1], tz=timezone.utc) + timedelta(seconds=meta.get("gmtoffset", 0))
     return {"label": s["label"], "series": closes, "price": price, "ref": ref,
@@ -442,7 +442,42 @@ def draw_markets(d, W, markets, y0, y1):
 
 
 # ---------------------------------------------------------------- main
-def render(cfg) -> Image.Image:
+STRIP_Y = 1024  # the market strip (y >= STRIP_Y) is also published as markets_N.png for page rotation
+
+
+def market_pages(cfg):
+    """Pages of up to 4 market items. New format: cfg["markets"] = [[item, ...], ...]
+    with items {"crypto": id, "label", "kraken"} or {"stock": symbol, "label"}.
+    Old format (cfg["crypto"] + cfg["stocks"]) still works as a single page."""
+    if "markets" in cfg:
+        return cfg["markets"]
+    items = [{"crypto": c["id"], **c} for c in cfg.get("crypto", [])]
+    items += [{"stock": x["symbol"], **x} for x in cfg.get("stocks", [])]
+    return [items]
+
+
+def fetch_market(item):
+    if "crypto" in item:
+        return fetch_crypto({"id": item["crypto"], "label": item["label"], "kraken": item.get("kraken", "")})
+    return fetch_stock({"symbol": item["stock"], "label": item["label"]})
+
+
+def draw_page_dots(d, W, n, k):
+    if n < 2:
+        return
+    r, gap = 6, 22
+    x0 = W / 2 - (n - 1) * gap / 2
+    for i in range(n):
+        x = x0 + i * gap
+        box = [x - r, 1424 - r, x + r, 1424 + r]
+        if i == k:
+            d.ellipse(box, fill=BLACK)
+        else:
+            d.ellipse(box, outline=MID, width=2)
+
+
+def render(cfg) -> list:
+    """Returns one full-screen image per market page (weather part identical on all)."""
     W, H = cfg.get("width", 1072), cfg.get("height", 1448)
     tz = cfg.get("timezone", "Europe/Berlin")
     loc = cfg["location"]
@@ -453,29 +488,32 @@ def render(cfg) -> Image.Image:
     else:
         now = datetime.now()
     cities = [safe(fetch_city_now, c, tz) for c in cfg.get("cities", [])[:4]]
-    markets = [safe(fetch_crypto, c) for c in cfg.get("crypto", [])]
-    markets += [safe(fetch_stock, s) for s in cfg.get("stocks", [])]
-    # keep a placeholder card for failures, but label it
-    for i, m in enumerate(markets):
-        if m is None:
-            src = (cfg.get("crypto", []) + cfg.get("stocks", []))[i]
-            markets[i] = {"label": src["label"], "series": [], "price": 0, "ref": 0,
-                          "span": "", "unit": ""}
 
-    img = Image.new("L", (W, H), WHITE)
-    d = ImageDraw.Draw(img)
+    base = Image.new("L", (W, H), WHITE)
+    d = ImageDraw.Draw(base)
     draw_header(d, W, cfg, now)
     draw_current(d, W, wx, 172)
     draw_hourly(d, W, wx, 462, 260, now)
     draw_daily(d, W, wx, 734, 214)
     draw_cities(d, W, cities, 948)
-    draw_markets(d, W, markets, 1036, 1398)
-    foot = "Open-Meteo · CoinGecko · Yahoo Finance"
-    d.text((48, 1410), foot, font=font(18), fill=MID)
+    d.text((48, 1410), "Open-Meteo · CoinGecko · Yahoo Finance", font=font(18), fill=MID)
     # The Kindle overlays its battery level in the bottom-right corner (x > 800, y > 1404).
 
-    # snap to the 16 gray levels of the e-ink panel
-    return img.point(lambda v: min(255, round(v / 17) * 17))
+    pages = market_pages(cfg)
+    out = []
+    for k, items in enumerate(pages):
+        markets = []
+        for it in items[:4]:
+            m = safe(fetch_market, it)
+            markets.append(m or {"label": it["label"], "series": [], "price": 0, "ref": 0,
+                                 "span": "", "unit": ""})
+        img = base.copy()
+        d = ImageDraw.Draw(img)
+        draw_markets(d, W, markets, 1036, 1398)
+        draw_page_dots(d, W, len(pages), k)
+        # snap to the 16 gray levels of the e-ink panel
+        out.append(img.point(lambda v: min(255, round(v / 17) * 17)))
+    return out
 
 
 def main():
@@ -485,10 +523,15 @@ def main():
     a = ap.parse_args()
     with open(a.config, encoding="utf-8") as fh:
         cfg = json.load(fh)
-    img = render(cfg)
-    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    img.save(a.out, optimize=True)
-    print(f"wrote {a.out} ({os.path.getsize(a.out) // 1024} KB)")
+    pages = render(cfg)
+    outdir = os.path.dirname(os.path.abspath(a.out))
+    os.makedirs(outdir, exist_ok=True)
+    pages[0].save(a.out, optimize=True)
+    for k, img in enumerate(pages, 1):
+        img.crop((0, STRIP_Y, img.width, img.height)).save(os.path.join(outdir, f"markets_{k}.png"), optimize=True)
+    with open(os.path.join(outdir, "pages.txt"), "w") as fh:
+        fh.write(f"{len(pages)} {STRIP_Y}\n")
+    print(f"wrote {a.out} + {len(pages)} market pages")
 
 
 if __name__ == "__main__":

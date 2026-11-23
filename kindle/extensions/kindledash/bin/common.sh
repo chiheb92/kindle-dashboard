@@ -57,9 +57,11 @@ wifi_off() {
 fetch() {
 	u="$URL?t=$(date +%s)"
 	rm -f "$IMG.tmp"
+	CURL_K=""
 	if curl -fsSL --max-time 60 -o "$IMG.tmp" "$u" 2>>"$LOG"; then
 		:
 	else
+		CURL_K="-k"
 		# Old firmware may lack newer root certificates; the image is public, so retry without verification.
 		log "HTTPS-Prüfung fehlgeschlagen, versuche ohne Zertifikatsprüfung"
 		curl -kfsSL --max-time 60 -o "$IMG.tmp" "$u" 2>>"$LOG" || { log "Download fehlgeschlagen"; return 1; }
@@ -70,7 +72,42 @@ fetch() {
 		return 1
 	fi
 	mv "$IMG.tmp" "$IMG"
+	fetch_pages
 	return 0
+}
+
+# Optional market pages (markets_N.png + pages.txt = "<count> <y>"). Failures are not fatal.
+NPAGES=1
+STRIP_Y=1024
+fetch_pages() {
+	base="${URL%/*}"
+	K=$CURL_K
+	if curl $K -fsSL --max-time 30 -o /tmp/kindledash.pages "$base/pages.txt?t=$(date +%s)" 2>/dev/null; then
+		n=$(cut -d' ' -f1 /tmp/kindledash.pages)
+		y=$(cut -d' ' -f2 /tmp/kindledash.pages)
+		case "$n" in ''|*[!0-9]*) n=1 ;; esac
+		case "$y" in ''|*[!0-9]*) y=1024 ;; esac
+		ok=1
+		i=1
+		while [ $i -le "$n" ]; do
+			curl $K -fsSL --max-time 30 -o "/tmp/kindledash_m$i.png" "$base/markets_$i.png?t=$(date +%s)" 2>/dev/null || ok=0
+			i=$((i + 1))
+		done
+		if [ $ok = 1 ]; then NPAGES=$n; STRIP_Y=$y; else NPAGES=1; fi
+	else
+		NPAGES=1
+	fi
+	PAGE=1
+}
+
+# Draw market page $1 into the strip at the bottom, without a full-screen flash
+show_page() {
+	f="/tmp/kindledash_m$1.png"
+	[ -f "$f" ] || return
+	if [ -x "$FBINK" ]; then
+		"$FBINK" -q -g file="$f",y="$STRIP_Y" 2>/dev/null && return
+	fi
+	eips -g "$f" -x 0 -y "$STRIP_Y" >/dev/null 2>&1
 }
 
 show() {

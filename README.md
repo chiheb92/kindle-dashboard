@@ -14,9 +14,10 @@ Der Kindle selbst rechnet nichts. Er lädt nur ein fertiges Bild und zeigt es an
 Alles steht in **`config.json`**. Du kannst die Datei direkt auf github.com bearbeiten. Nach dem Speichern wird das Bild automatisch neu erzeugt.
 
 - `location`: Hauptort mit Koordinaten
-- `cities`: weitere Städte (nur Namen, höchstens 4)
-- `crypto`: CoinGecko-IDs (`bitcoin`, `ethereum`, `solana` …) und das Kraken-Paar als Ersatz
-- `stocks`: Yahoo-Symbole, z. B. `SAP.DE`, `AAPL`, `^GDAXI`, `EUNL.DE` (MSCI World ETF). Insgesamt passen 4 Kacheln für Krypto und Aktien zusammen.
+- `cities`: weitere Städte (Name mit Koordinaten oder nur der Name, höchstens 4)
+- `markets`: Seiten mit je bis zu 4 Kacheln. Der Kindle wechselt die Seiten automatisch (`ROTATE_SEC` in `settings.sh`).
+  - Krypto: `{ "crypto": "bitcoin", "label": "Bitcoin", "kraken": "XXBTZEUR" }` (CoinGecko-ID, Kraken als Ersatz)
+  - Aktien/Indizes: `{ "stock": "NVDA", "label": "Nvidia" }` mit Yahoo-Symbolen, z. B. `SAP.DE`, `6857.T`, `^N225`, `EUNL.DE`
 
 Lokal testen: `python render/dashboard.py`. Das Bild landet dann in `out/dashboard.png`.
 

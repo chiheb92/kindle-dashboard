@@ -10,6 +10,10 @@ REFRESH_MIN=15
 NIGHT_START=23
 NIGHT_END=6
 
+# Kurs-Seiten (Krypto/Aktien) alle wie viele Sekunden wechseln (0 = aus).
+# Nachts wird nicht gewechselt.
+ROTATE_SEC=20
+
 # Beleuchtung (0 = aus, 1-24 = Stufe wie im Kindle-Menü, leer = nicht anfassen).
 # E-Ink braucht kein Licht, um das Bild zu halten. Licht kostet am meisten Akku.
 LIGHT_DAY=""
