@@ -126,9 +126,10 @@ def fetch_city_now(city, tz):
 
 
 def fetch_crypto(c):
+    cur = c.get("currency", "eur").lower()
     try:
         j = get_json(f"https://api.coingecko.com/api/v3/coins/{c['id']}/market_chart",
-                     {"vs_currency": "eur", "days": 1})
+                     {"vs_currency": cur, "days": 1})
         series = [p[1] for p in j["prices"]]
         if len(series) < 5:
             raise ValueError("too few points")
@@ -138,7 +139,7 @@ def fetch_crypto(c):
         rows = next(v for k, v in j["result"].items() if k != "last")
         series = [float(r[4]) for r in rows[-96:]]  # 96 x 15 min = 24 h
     return {"label": c["label"], "series": series, "price": series[-1],
-            "ref": series[0], "span": "24 h", "unit": "€"}
+            "ref": series[0], "span": "24 h", "unit": {"eur": "€", "usd": "$"}.get(cur, cur.upper())}
 
 
 def fetch_stock(s):
@@ -468,7 +469,8 @@ def market_pages(cfg):
 
 def fetch_market(item):
     if "crypto" in item:
-        return fetch_crypto({"id": item["crypto"], "label": item["label"], "kraken": item.get("kraken", "")})
+        return fetch_crypto({"id": item["crypto"], "label": item["label"], "kraken": item.get("kraken", ""),
+                             "currency": item.get("currency", "eur")})
     return fetch_stock({"symbol": item["stock"], "label": item["label"]})
 
 

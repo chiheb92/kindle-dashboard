@@ -28,13 +28,15 @@
     [
       {
         "crypto": "bitcoin",
+        "currency": "usd",
         "label": "Bitcoin",
-        "kraken": "XXBTZEUR"
+        "kraken": "XXBTZUSD"
       },
       {
         "crypto": "ethereum",
+        "currency": "usd",
         "label": "Ethereum",
-        "kraken": "XETHZEUR"
+        "kraken": "XETHZUSD"
       },
       {
         "stock": "^GDAXI",
