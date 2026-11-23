@@ -1,0 +1,16 @@
+{
+  "title": "Karlsruhe",
+  "location": { "name": "Karlsruhe", "lat": 49.0069, "lon": 8.4037 },
+  "timezone": "Europe/Berlin",
+  "cities": ["Berlin", "Stuttgart", "Paris"],
+  "crypto": [
+    { "id": "bitcoin", "label": "Bitcoin", "kraken": "XXBTZEUR" },
+    { "id": "ethereum", "label": "Ethereum", "kraken": "XETHZEUR" }
+  ],
+  "stocks": [
+    { "symbol": "^GDAXI", "label": "DAX" },
+    { "symbol": "^GSPC", "label": "S&P 500" }
+  ],
+  "width": 1072,
+  "height": 1448
+}
