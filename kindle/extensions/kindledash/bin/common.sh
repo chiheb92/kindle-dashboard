@@ -9,6 +9,9 @@ FBINK=/mnt/us/libkh/bin/fbink
 
 . "$DIR/settings.sh"
 
+# The Kindle shell runs in UTC; use local time for the log and the night hours
+export TZ="${TZ_LOCAL:-CET-1CEST,M3.5.0,M10.5.0/3}"
+
 log() {
 	echo "$(date '+%d.%m. %H:%M:%S') $*" >> "$LOG"
 }

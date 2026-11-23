@@ -9,11 +9,17 @@ echo $$ > "$PIDF"
 rm -f "$STOPF"
 log "=== Dashboard gestartet (PID $$) ==="
 
-# Find the touchscreen input device
+# Input devices to watch for "tap to exit". Prefer the touchscreen; if it can't be
+# identified by name, watch every input device (touch or power button both count).
+grep -E '^(N|H):' /proc/bus/input/devices >> "$LOG" 2>/dev/null
 TOUCH=""
-H=$(awk '/^N: Name=/{n=tolower($0)} /^H: Handlers=/{ if (n ~ /touch|cyttsp|zforce|pt_mt|_mt|elan/) { for(i=1;i<=NF;i++) if ($i ~ /^event/) { print $i; exit } } }' /proc/bus/input/devices 2>/dev/null)
-[ -n "$H" ] && TOUCH="/dev/input/$H"
-log "Touch-Gerät: ${TOUCH:-nicht gefunden}"
+for H in $(awk '/^N: Name=/{n=tolower($0)} /^H: Handlers=/{ if (n ~ /touch|cyttsp|zforce|pt_mt|_mt|elan|cypress|ts/) { for(i=1;i<=NF;i++) if ($i ~ /^event/) print $i } }' /proc/bus/input/devices 2>/dev/null); do
+	TOUCH="$TOUCH /dev/input/$H"
+done
+if [ -z "$TOUCH" ]; then
+	TOUCH=$(ls /dev/input/event* 2>/dev/null | tr '\n' ' ')
+fi
+log "Eingabegeräte: ${TOUCH:-keine}"
 
 # Called every second while waiting: rotates the market pages every ROTATE_SEC seconds (daytime only).
 tick() {
@@ -26,36 +32,28 @@ tick() {
 	[ -n "$B" ] && corner "Akku $B %"
 }
 
-# Blocks until a touch event or until $1 seconds passed. 0 = touched, 1 = timeout / stop flag.
+# Blocks until an input event or until $1 seconds passed. 0 = touched, 1 = timeout / stop flag.
 wait_touch() {
 	secs=$1
-	if [ -z "$TOUCH" ]; then
-		t=0
-		while [ $t -lt "$secs" ]; do
-			[ -f "$STOPF" ] && return 1
-			sleep 1
-			t=$((t + 1))
-			tick $t
-		done
-		return 1
-	fi
-	dd if="$TOUCH" of=/dev/null bs=16 count=1 2>/dev/null &
-	DD=$!
+	DDS=""
+	for dev in $TOUCH; do
+		dd if="$dev" of=/dev/null bs=16 count=1 2>/dev/null &
+		DDS="$DDS $!"
+	done
 	t=0
+	res=1
 	while [ $t -lt "$secs" ]; do
 		sleep 1
 		t=$((t + 1))
-		if ! kill -0 $DD 2>/dev/null; then
-			return 0
-		fi
-		if [ -f "$STOPF" ]; then
-			kill $DD 2>/dev/null
-			return 1
-		fi
+		for p in $DDS; do
+			kill -0 $p 2>/dev/null || res=0
+		done
+		[ $res = 0 ] && break
+		[ -f "$STOPF" ] && break
 		tick $t
 	done
-	kill $DD 2>/dev/null
-	return 1
+	for p in $DDS; do kill $p 2>/dev/null; done
+	return $res
 }
 
 cleanup() {
