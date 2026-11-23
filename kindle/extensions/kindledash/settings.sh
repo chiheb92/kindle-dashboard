@@ -10,6 +10,11 @@ REFRESH_MIN=15
 NIGHT_START=23
 NIGHT_END=6
 
+# Beleuchtung (0 = aus, 1-24 = Stufe wie im Kindle-Menü, leer = nicht anfassen).
+# E-Ink braucht kein Licht, um das Bild zu halten. Licht kostet am meisten Akku.
+LIGHT_DAY=""
+LIGHT_NIGHT=0
+
 # WLAN zwischen den Updates ausschalten (1 = ja, spart viel Akku)
 WIFI_OFF_BETWEEN=1
 

@@ -49,6 +49,7 @@ cleanup() {
 	log "Dashboard wird beendet"
 	lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
 	lipc-set-prop com.lab126.cmd wirelessEnable 1 2>/dev/null
+	[ -n "$LIGHT_ORIG" ] && lipc-set-prop com.lab126.powerd flIntensity "$LIGHT_ORIG" 2>/dev/null
 	if [ "$FRAMEWORKLESS" = "1" ]; then
 		eips -c >/dev/null 2>&1
 		say "Kindle-Oberfläche startet..."
@@ -66,6 +67,17 @@ cleanup() {
 }
 
 lipc-set-prop com.lab126.powerd preventScreenSaver 1 2>/dev/null
+
+# Front light: remember the user's level so it can be restored on exit
+LIGHT_ORIG=$(lipc-get-prop com.lab126.powerd flIntensity 2>/dev/null)
+log "Licht vorher: ${LIGHT_ORIG:-?}"
+set_light() {
+	[ -z "$1" ] && return
+	[ "$1" = "$LIGHT_NOW" ] && return
+	lipc-set-prop com.lab126.powerd flIntensity "$1" 2>/dev/null
+	LIGHT_NOW=$1
+	log "Licht -> $1"
+}
 
 if [ "$FRAMEWORKLESS" = "1" ]; then
 	log "Halte Kindle-Oberfläche an"
@@ -86,6 +98,8 @@ while true; do
 	else
 		{ [ "$HOUR" -ge "$NIGHT_START" ] && [ "$HOUR" -lt "$NIGHT_END" ]; } && NIGHT=1
 	fi
+
+	if [ "$NIGHT" = "1" ]; then set_light "$LIGHT_NIGHT"; else set_light "$LIGHT_DAY"; fi
 
 	if [ "$NIGHT" = "0" ] || [ ! -f "$IMG" ]; then
 		if wifi_on && fetch; then
