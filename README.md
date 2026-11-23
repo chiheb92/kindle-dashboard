@@ -1,10 +1,10 @@
 # Kindle Dashboard
 
-Ein E-Ink-Dashboard für einen gejailbreakten Kindle Paperwhite 3 (1072 × 1448). Es zeigt das Wetter für Karlsruhe (aktuell, die nächsten 24 Stunden und 6 Tage), weitere Städte sowie Bitcoin, Ethereum, DAX und S&P 500 mit Tagesverlauf.
+Ein E-Ink-Dashboard für einen gejailbreakten Kindle Paperwhite 3, im Querformat (Design C): links immer Uhr und Wetter, rechts wechseln Kurse, Vorschau und Städte. Es zeigt das Wetter für Karlsruhe (aktuell, die nächsten 24 Stunden und 6 Tage), weitere Städte sowie Bitcoin, Ethereum, DAX und S&P 500 mit Tagesverlauf.
 
 ```
-GitHub Actions (alle 30 min)  ──►  dashboard.png auf GitHub Pages  ──►  Kindle lädt alle 15 min
-   render/dashboard.py                                                   extensions/kindledash
+GitHub Actions (alle 30 min)  ──►  Bilder auf GitHub Pages  ──►  Kindle lädt alle 15 min
+   render/landscape.py                                            extensions/kindledash
 ```
 
 Der Kindle selbst rechnet nichts. Er lädt nur ein fertiges Bild und zeigt es an. Zwischen den Updates schaltet er das WLAN aus und verbraucht kaum Strom.
@@ -19,7 +19,11 @@ Alles steht in **`config.json`**. Du kannst die Datei direkt auf github.com bear
   - Krypto: `{ "crypto": "bitcoin", "label": "Bitcoin", "kraken": "XXBTZEUR" }` (CoinGecko-ID, Kraken als Ersatz)
   - Aktien/Indizes: `{ "stock": "NVDA", "label": "Nvidia" }` mit Yahoo-Symbolen, z. B. `SAP.DE`, `6857.T`, `^N225`, `EUNL.DE`
 
-Lokal testen: `python render/dashboard.py`. Das Bild landet dann in `out/dashboard.png`.
+Lokal testen: `cd render && python landscape.py`. Die Bilder landen dann in `out/`.
+
+`orientation` in `config.json` legt fest, wie der Kindle liegt: `usb_right` (USB-Anschluss rechts) oder `usb_left`.
+
+Die Uhr zeichnet der Kindle selbst jede Minute aus Ziffern-Bildern (`digit_0..9.png`). Die Bilder liefert die Cloud schon gedreht mit.
 
 ## Auf dem Kindle
 

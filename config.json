@@ -1,24 +1,67 @@
 {
   "title": "Karlsruhe",
-  "location": { "name": "Karlsruhe", "lat": 49.0069, "lon": 8.4037 },
+  "location": {
+    "name": "Karlsruhe",
+    "lat": 49.0069,
+    "lon": 8.4037
+  },
   "timezone": "Europe/Berlin",
+  "orientation": "usb_right",
   "cities": [
-    { "name": "Stuttgart", "lat": 48.7758, "lon": 9.1829 },
-    { "name": "Regensburg", "lat": 49.0151, "lon": 12.1016 },
-    { "name": "Sousse", "lat": 35.8254, "lon": 10.6370 }
+    {
+      "name": "Stuttgart",
+      "lat": 48.7758,
+      "lon": 9.1829
+    },
+    {
+      "name": "Regensburg",
+      "lat": 49.0151,
+      "lon": 12.1016
+    },
+    {
+      "name": "Sousse",
+      "lat": 35.8254,
+      "lon": 10.637
+    }
   ],
   "markets": [
     [
-      { "crypto": "bitcoin", "label": "Bitcoin", "kraken": "XXBTZEUR" },
-      { "crypto": "ethereum", "label": "Ethereum", "kraken": "XETHZEUR" },
-      { "stock": "^GDAXI", "label": "DAX" },
-      { "stock": "^GSPC", "label": "S&P 500" }
+      {
+        "crypto": "bitcoin",
+        "label": "Bitcoin",
+        "kraken": "XXBTZEUR"
+      },
+      {
+        "crypto": "ethereum",
+        "label": "Ethereum",
+        "kraken": "XETHZEUR"
+      },
+      {
+        "stock": "^GDAXI",
+        "label": "DAX"
+      },
+      {
+        "stock": "^GSPC",
+        "label": "S&P 500"
+      }
     ],
     [
-      { "stock": "^N225", "label": "Nikkei 225" },
-      { "stock": "6857.T", "label": "Advantest" },
-      { "stock": "NVDA", "label": "Nvidia" },
-      { "stock": "ANT", "label": "Anthropic" }
+      {
+        "stock": "^N225",
+        "label": "Nikkei 225"
+      },
+      {
+        "stock": "6857.T",
+        "label": "Advantest"
+      },
+      {
+        "stock": "NVDA",
+        "label": "Nvidia"
+      },
+      {
+        "stock": "ANT",
+        "label": "Anthropic"
+      }
     ]
   ],
   "width": 1072,

@@ -156,8 +156,18 @@ def fetch_stock(s):
     unit = "" if s["symbol"].startswith("^") else {"EUR": "€", "USD": "$", "JPY": "¥"}.get(cur, cur)
     ts = res.get("timestamp") or [0]
     day = datetime.fromtimestamp(ts[-1], tz=timezone.utc) + timedelta(seconds=meta.get("gmtoffset", 0))
+    span = f"{WT_KURZ[day.weekday()]} {day:%d.%m.}"
+    if len(closes) < 12:  # session just opened: show the previous day too so the chart isn't empty
+        try:
+            j2 = get_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{s['symbol']}",
+                          {"range": "2d", "interval": "5m", "includePrePost": "false"})
+            c2 = [x for x in j2["chart"]["result"][0]["indicators"]["quote"][0]["close"] if x is not None]
+            if len(c2) > len(closes):
+                closes, span = c2, "2 Tage"
+        except Exception:  # noqa: BLE001
+            pass
     return {"label": s["label"], "series": closes, "price": price, "ref": ref,
-            "span": f"{WT_KURZ[day.weekday()]} {day:%d.%m.}", "unit": unit}
+            "span": span, "unit": unit}
 
 
 # ---------------------------------------------------------------- icons

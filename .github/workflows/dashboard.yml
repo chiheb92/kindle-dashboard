@@ -36,7 +36,8 @@ jobs:
 
       - name: Bild erzeugen
         run: |
-          python render/dashboard.py --out site/dashboard.png   # + markets_N.png, pages.txt
+          mkdir -p site
+          cd render && python landscape.py --outdir ../site && cd ..   # dashboard.png, panel_N, digits, layout.txt
           date -u +%s > site/timestamp.txt
           cp render/index.html site/index.html
 

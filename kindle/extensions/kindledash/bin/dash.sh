@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dashboard main loop. Started (detached) by start.sh.
+# Dashboard main loop (landscape design). Started detached by start.sh.
 # Leave the dashboard: tap the screen twice (within 6 seconds).
 
 trap '' HUP TERM   # survive stopping the Kindle UI
@@ -11,25 +11,26 @@ log "=== Dashboard gestartet (PID $$) ==="
 
 # Input devices to watch for "tap to exit". Prefer the touchscreen; if it can't be
 # identified by name, watch every input device (touch or power button both count).
-grep -E '^(N|H):' /proc/bus/input/devices >> "$LOG" 2>/dev/null
 TOUCH=""
-for H in $(awk '/^N: Name=/{n=tolower($0)} /^H: Handlers=/{ if (n ~ /touch|cyttsp|zforce|pt_mt|_mt|elan|cypress|ts/) { for(i=1;i<=NF;i++) if ($i ~ /^event/) print $i } }' /proc/bus/input/devices 2>/dev/null); do
+for H in $(awk '/^N: Name=/{n=tolower($0)} /^H: Handlers=/{ if (n ~ /touch|cyttsp|zforce|pt_mt|_mt|elan|cypress/) { for(i=1;i<=NF;i++) if ($i ~ /^event/) print $i } }' /proc/bus/input/devices 2>/dev/null); do
 	TOUCH="$TOUCH /dev/input/$H"
 done
-if [ -z "$TOUCH" ]; then
-	TOUCH=$(ls /dev/input/event* 2>/dev/null | tr '\n' ' ')
-fi
+[ -z "$TOUCH" ] && TOUCH=$(ls /dev/input/event* 2>/dev/null | tr '\n' ' ')
 log "Eingabegeräte: ${TOUCH:-keine}"
 
-# Called every second while waiting: rotates the market pages every ROTATE_SEC seconds (daytime only).
+PAGE=1
+ROTATING=1
+B=""
+
+# Called every second while waiting: keeps the clock current and rotates the right panel.
 tick() {
+	draw_clock
 	[ "$ROTATING" = "1" ] || return
 	[ "${NPAGES:-1}" -gt 1 ] || return
 	[ "${ROTATE_SEC:-0}" -gt 0 ] || return
 	[ $(($1 % ROTATE_SEC)) -eq 0 ] || return
 	PAGE=$((PAGE % NPAGES + 1))
-	show_page $PAGE
-	[ -n "$B" ] && corner "Akku $B %"
+	blit "$A/panel_$PAGE.png" "$L_panel" flash
 }
 
 # Blocks until an input event or until $1 seconds passed. 0 = touched, 1 = timeout / stop flag.
@@ -56,6 +57,15 @@ wait_touch() {
 	return $res
 }
 
+# Full redraw: background image, current panel, clock, low-battery note
+redraw() {
+	show
+	CLOCK_LAST="xxxx"
+	[ "$PAGE" != "1" ] && blit "$A/panel_$PAGE.png" "$L_panel"
+	draw_clock
+	[ -n "$B" ] && [ "$B" -lt 15 ] && blit "$A/lowbat.png" "$L_lowbat"
+}
+
 cleanup() {
 	log "Dashboard wird beendet"
 	lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
@@ -63,14 +73,17 @@ cleanup() {
 	[ -n "$LIGHT_ORIG" ] && lipc-set-prop com.lab126.powerd flIntensity "$LIGHT_ORIG" 2>/dev/null
 	if [ "$FRAMEWORKLESS" = "1" ]; then
 		eips -c >/dev/null 2>&1
-		say "Kindle-Oberfläche startet..."
-		start lab126_gui 2>/dev/null || start framework 2>/dev/null
-		# safety net: if the UI did not come back, reboot
-		sleep 60
-		if ! status lab126_gui 2>/dev/null | grep -q running && ! status framework 2>/dev/null | grep -q running; then
-			log "Oberfläche nicht gestartet -> Neustart"
-			reboot
-		fi
+		say "Kindle-Oberflaeche startet..."
+		start lab126_gui >> "$LOG" 2>&1 || start framework >> "$LOG" 2>&1
+		# Safety net: reboot only if the UI job is not even trying to start after 2 minutes.
+		# (The UI can take well over a minute to come up, so don't insist on "running".)
+		sleep 120
+		ST="$(status lab126_gui 2>&1) / $(status framework 2>&1)"
+		log "Status nach 120 s: $ST"
+		case "$ST" in
+			*start/*) ;;
+			*) log "Oberfläche nicht gestartet -> Neustart"; reboot ;;
+		esac
 	fi
 	rm -f "$PIDF" "$STOPF"
 	log "=== Dashboard beendet ==="
@@ -93,12 +106,13 @@ set_light() {
 if [ "$FRAMEWORKLESS" = "1" ]; then
 	log "Halte Kindle-Oberfläche an"
 	sleep 2   # let KUAL close first
-	stop lab126_gui 2>/dev/null || stop framework 2>/dev/null
+	stop lab126_gui >> "$LOG" 2>&1 || stop framework >> "$LOG" 2>&1
 	sleep 3
 	eips -c >/dev/null 2>&1
 	say "Dashboard wird geladen..."
 fi
 
+load_layout   # assets from an earlier run, if any
 FAILS=0
 while true; do
 	[ -f "$STOPF" ] && cleanup
@@ -109,31 +123,26 @@ while true; do
 	else
 		{ [ "$HOUR" -ge "$NIGHT_START" ] && [ "$HOUR" -lt "$NIGHT_END" ]; } && NIGHT=1
 	fi
-
 	if [ "$NIGHT" = "1" ]; then set_light "$LIGHT_NIGHT"; ROTATING=0; else set_light "$LIGHT_DAY"; ROTATING=1; fi
 
 	if [ "$NIGHT" = "0" ] || [ ! -f "$IMG" ]; then
 		if wifi_on && fetch; then
 			FAILS=0
-			show
-			log "Bild aktualisiert"
+			PAGE=1
+			log "Bild aktualisiert (Seiten: $NPAGES)"
 		else
 			FAILS=$((FAILS + 1))
-			[ -f "$IMG" ] && show
-			say "Update fehlgeschlagen ($FAILS) - nächster Versuch bald"
+			log "Update fehlgeschlagen ($FAILS)"
 		fi
 		[ "$WIFI_OFF_BETWEEN" = "1" ] && wifi_off
 		B=$(battery)
-		if [ -n "$B" ]; then
-			if [ "$B" -lt 15 ]; then corner "Akku $B % - bitte laden"; else corner "Akku $B %"; fi
-		fi
+		[ -f "$IMG" ] && redraw
 	fi
 
 	# after a failure retry sooner (2 min), else the normal interval
 	if [ $FAILS -gt 0 ] && [ $FAILS -lt 4 ]; then WAIT=120; else WAIT=$((REFRESH_MIN * 60)); fi
 
 	if wait_touch $WAIT; then
-		# first tap: ask for confirmation
 		say "Nochmal tippen = Dashboard beenden"
 		sleep 2
 		R=$ROTATING; ROTATING=0
@@ -141,8 +150,6 @@ while true; do
 			cleanup
 		fi
 		ROTATING=$R
-		show
-		[ "$PAGE" != "1" ] && show_page $PAGE
-		[ -n "$B" ] && corner "Akku $B %"
+		redraw
 	fi
 done
