@@ -29,7 +29,7 @@ Die Uhr zeichnet der Kindle selbst jede Minute aus Ziffern-Bildern (`digit_0..9.
 
 Die Einstellungen stehen in `extensions/kindledash/settings.sh`: die Bild-URL, das Update-Intervall, die Nachtruhe und WLAN aus zwischen den Updates.
 
-Im KUAL-Menü unter **Dashboard**:
+Am schnellsten startest du es über das Buch **„Dashboard“** in der Bibliothek. Das ist ein Scriptlet: `documents/Dashboard.sh`, mit Hotfix ab 2.x. Alternativ geht es über das KUAL-Menü unter **Dashboard**:
 
 - **Einmal anzeigen (Test)**: lädt das Bild einmal. Wenn du danach tippst, kommt die normale Oberfläche zurück.
 - **Dashboard starten**: hält die Kindle-Oberfläche an und zeigt das Dashboard dauerhaft.
