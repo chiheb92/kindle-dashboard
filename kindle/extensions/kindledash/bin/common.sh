@@ -84,10 +84,62 @@ fetch() {
 	load_layout
 	i=1
 	while [ $i -le "$NPAGES" ]; do get "panel_$i.png"; i=$((i + 1)); done
-	for n in 0 1 2 3 4 5 6 7 8 9; do get "digit_$n.png"; done
-	get colon.png
-	get lowbat.png
+	# sprites only when the server says they changed (saves Wi-Fi time)
+	if [ "$VER" != "$(cat "$A/sprites.ver" 2>/dev/null)" ] || [ ! -f "$A/b_pct.png" ]; then
+		ok=1
+		for n in 0 1 2 3 4 5 6 7 8 9; do get "digit_$n.png" || ok=0; get "b_$n.png" || ok=0; done
+		for f in colon lowbat b_blank b_pct bat_0 bat_1 bat_2 bat_3 bat_4 bat_c; do get "$f.png" || ok=0; done
+		[ $ok = 1 ] && echo "$VER" > "$A/sprites.ver"
+		log "Symbole geladen (Version $VER, ok=$ok)"
+	fi
 	return 0
+}
+
+# ---- battery
+charging() {
+	c=$(lipc-get-prop com.lab126.powerd isCharging 2>/dev/null)
+	[ "$c" = "1" ]
+}
+
+# Append one line to battery.csv: date;time;percent;light;charging
+BATCSV="$DIR/battery.csv"
+batlog() {
+	[ -f "$BATCSV" ] || echo "datum;uhrzeit;akku_prozent;licht;laedt;notiz" > "$BATCSV"
+	if charging; then ch=1; else ch=0; fi
+	echo "$(date '+%Y-%m-%d;%H:%M');$(battery);$(lipc-get-prop com.lab126.powerd flIntensity 2>/dev/null);$ch;$1" >> "$BATCSV"
+}
+
+# Battery indicator in the left column: [icon] [3 digits] [%]; redrawn only on change.
+BAT_LAST=""
+draw_battery() {
+	[ -n "$L_bat" ] || return
+	b=$(battery)
+	case "$b" in ''|*[!0-9]*) return ;; esac
+	if charging; then st=c; else st=n; fi
+	[ "$b$st" = "$BAT_LAST" ] && return
+	if [ "$b" -lt 15 ] && [ "$st" = n ]; then
+		blit "$A/lowbat.png" "$L_lowbat"
+		BAT_LAST="$b$st"
+		return
+	fi
+	if [ "$st" = c ]; then icon=c
+	elif [ "$b" -ge 90 ]; then icon=4
+	elif [ "$b" -ge 65 ]; then icon=3
+	elif [ "$b" -ge 40 ]; then icon=2
+	elif [ "$b" -ge 15 ]; then icon=1
+	else icon=0; fi
+	blit "$A/bat_$icon.png" "$L_bat"
+	s=$(printf '%3s' "$b")
+	i=0
+	while [ $i -lt 3 ]; do
+		c=$(echo "$s" | cut -c$((i + 1)))
+		[ "$c" = " " ] && c=blank
+		eval "pos=\$L_bd$i"
+		blit "$A/b_$c.png" "$pos"
+		i=$((i + 1))
+	done
+	blit "$A/b_pct.png" "$L_bpct"
+	BAT_LAST="$b$st"
 }
 
 # layout.txt: "<name> <x> <y>" -> variables L_<name>="x y"; "pages N 0" -> NPAGES
@@ -97,6 +149,7 @@ load_layout() {
 	while read -r k x y; do
 		case "$k" in
 			pages) NPAGES=$x ;;
+			ver) VER=$x ;;
 			*[!a-z0-9]*|'') ;;
 			*) eval "L_$k=\"$x $y\"" ;;
 		esac

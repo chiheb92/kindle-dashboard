@@ -150,7 +150,8 @@ def draw_left(d, wx, now, title):
     else:
         d.text((48, 450), "Wetter nicht verfügbar", font=font(40, 600), fill=DARK)
     d.text((48, 975), title, font=font(40, 600), fill=DARK)
-    rtext(d, COL - 40, 983, f"Stand {now:%H:%M}", font(30), MID)
+    d.text((48 + tw(d, title, font(40, 600)) + 14, 983), f"· {now:%H:%M}", font=font(30), fill=MID)
+    # bottom-right of the column is left free for the Kindle's own battery indicator
     d.line([COL, 30, COL, LH - 30], fill=BLACK, width=5)
 
 
@@ -225,6 +226,51 @@ def sprite(text, f, w, h):
     d = ImageDraw.Draw(img)
     d.text(((w - tw(d, text, f)) / 2, 0), text, font=f, fill=BLACK)
     return img
+
+
+# ---------------------------------------------------------------- battery sprites
+BAT_Y, BAT_H = 972, 52
+
+
+def battery_icon(level, charging=False):
+    """level 0..4 (empty..full); charging adds a lightning bolt."""
+    im = Image.new("L", (66, BAT_H), WHITE)
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([2, 12, 56, 42], radius=6, outline=DARK, width=4)
+    d.rectangle([57, 20, 62, 34], fill=DARK)
+    if charging:
+        d.polygon([(33, 14), (20, 29), (29, 29), (24, 41), (38, 25), (29, 25)], fill=BLACK)
+    else:
+        w = [3, 12, 24, 36, 46][level]
+        d.rectangle([8, 18, 8 + w, 36], fill=DARK)
+    return im
+
+
+def battery_sprites():
+    f = font(34, 600)
+    probe = ImageDraw.Draw(Image.new("L", (10, 10)))
+    cell = int(max(tw(probe, str(n), f) for n in range(10))) + 2
+    pw = int(tw(probe, " %", f)) + 2
+
+    def txt(t, w):
+        im = Image.new("L", (w, BAT_H), WHITE)
+        dd = ImageDraw.Draw(im)
+        dd.text((w - tw(dd, t, f), 4), t, font=f, fill=DARK)
+        return im
+
+    sprites = {f"b_{n}": txt(str(n), cell) for n in range(10)}
+    sprites["b_blank"] = Image.new("L", (cell, BAT_H), WHITE)
+    sprites["b_pct"] = txt(" %", pw)
+    for lv in range(5):
+        sprites[f"bat_{lv}"] = battery_icon(lv)
+    sprites["bat_c"] = battery_icon(0, charging=True)
+    R = COL - 40          # "[ 9][7] % [icon]" right-aligned; a blank first digit sits on the far left
+    pos = {"bat": R - 66}
+    pos["bpct"] = pos["bat"] - 8 - pw
+    for i in range(3):
+        pos[f"bd{i}"] = pos["bpct"] - (3 - i) * cell
+    widths = {"bpct": pw, "bd0": cell, "bd1": cell, "bd2": cell, "bat": 66}
+    return sprites, pos, widths
 
 
 # ---------------------------------------------------------------- rotation to portrait
@@ -310,8 +356,23 @@ def render(cfg, outdir):
     img_rot(lb).save(os.path.join(outdir, "lowbat.png"))
     layout.append(("lowbat", *rect(30, 960, COL - 60, 56)))
 
+    # battery indicator sprites (drawn by the Kindle, bottom-right of the left column)
+    bsprites, bpos, bwidths = battery_sprites()
+    for name, im in bsprites.items():
+        img_rot(im).save(os.path.join(outdir, f"{name}.png"), optimize=True)
+    for name, x in bpos.items():
+        layout.append((name, *rect(x, BAT_Y, bwidths[name], BAT_H)))
+
+    # version of all sprites: the Kindle re-downloads them only when this changes
+    import hashlib
+    hsh = hashlib.sha1()
+    for fn in sorted(os.listdir(outdir)):
+        if fn.startswith(("digit_", "colon", "lowbat", "b_", "bat_")):
+            hsh.update(open(os.path.join(outdir, fn), "rb").read())
+
     with open(os.path.join(outdir, "layout.txt"), "w", newline="\n") as fh:
         fh.write(f"pages {n_pan} 0\n")
+        fh.write(f"ver {hsh.hexdigest()[:12]} 0\n")
         for name, x, y in layout:
             fh.write(f"{name} {int(x)} {int(y)}\n")
     return panels, full

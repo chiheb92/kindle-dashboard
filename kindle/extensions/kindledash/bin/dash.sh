@@ -21,6 +21,7 @@ B=""
 # Called every second while waiting: keeps the clock current and rotates the right panel.
 tick() {
 	draw_clock
+	[ $(($1 % 60)) -eq 0 ] && draw_battery
 	[ "$ROTATING" = "1" ] || return
 	[ "${NPAGES:-1}" -gt 1 ] || return
 	[ "${ROTATE_SEC:-0}" -gt 0 ] || return
@@ -59,11 +60,13 @@ redraw() {
 	CLOCK_LAST="xxxx"
 	[ "$PAGE" != "1" ] && blit "$A/panel_$PAGE.png" "$L_panel"
 	draw_clock
-	[ -n "$B" ] && [ "$B" -lt 15 ] && blit "$A/lowbat.png" "$L_lowbat"
+	BAT_LAST=""
+	draw_battery
 }
 
 cleanup() {
 	log "Dashboard wird beendet"
+	batlog "ende"
 	lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
 	lipc-set-prop com.lab126.cmd wirelessEnable 1 2>/dev/null
 	[ -n "$LIGHT_ORIG" ] && lipc-set-prop com.lab126.powerd flIntensity "$LIGHT_ORIG" 2>/dev/null
@@ -109,9 +112,12 @@ if [ "$FRAMEWORKLESS" = "1" ]; then
 fi
 
 load_layout   # assets from an earlier run, if any
+batlog "start"
 FAILS=0
 while true; do
 	[ -f "$STOPF" ] && cleanup
+	[ -n "$STARTED" ] && batlog ""
+	STARTED=1
 	HOUR=$(date +%H | sed 's/^0//')
 	NIGHT=0
 	if [ "$NIGHT_START" -gt "$NIGHT_END" ]; then
