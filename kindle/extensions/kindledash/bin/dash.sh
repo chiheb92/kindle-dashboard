@@ -9,13 +9,9 @@ echo $$ > "$PIDF"
 rm -f "$STOPF"
 log "=== Dashboard gestartet (PID $$) ==="
 
-# Input devices to watch for "tap to exit". Prefer the touchscreen; if it can't be
-# identified by name, watch every input device (touch or power button both count).
-TOUCH=""
-for H in $(awk '/^N: Name=/{n=tolower($0)} /^H: Handlers=/{ if (n ~ /touch|cyttsp|zforce|pt_mt|_mt|elan|cypress|onkey/) { for(i=1;i<=NF;i++) if ($i ~ /^event/) print $i } }' /proc/bus/input/devices 2>/dev/null); do
-	TOUCH="$TOUCH /dev/input/$H"
-done
-[ -z "$TOUCH" ] && TOUCH=$(ls /dev/input/event* 2>/dev/null | tr '\n' ' ')
+# Input devices to watch for "tap to exit": all of them. On the PW3 that is
+# event0 (power key) and event1 (touchscreen); name matching in busybox awk proved unreliable.
+TOUCH=$(ls /dev/input/event* 2>/dev/null | tr '\n' ' ')
 log "Eingabegeräte: ${TOUCH:-keine}"
 
 PAGE=1
