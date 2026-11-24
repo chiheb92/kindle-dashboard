@@ -273,6 +273,70 @@ def battery_sprites():
     return sprites, pos, widths
 
 
+# ---------------------------------------------------------------- light menu (overlay on the right panel)
+MENU_X0 = COL + 3
+BTN = {  # landscape hit boxes (x0, y0, x1, y1)
+    "minus": (603, 330, 993, 590),
+    "plus": (1018, 330, 1408, 590),
+    "done": (603, 630, 993, 850),
+    "exit": (1018, 630, 1408, 850),
+}
+LVL_BOX = (603, 140, 1408, 290)
+
+
+def draw_menu():
+    im = Image.new("L", (LW, LH), WHITE)
+    d = ImageDraw.Draw(im)
+    d.text((603, 40), "Beleuchtung", font=font(60, 700), fill=BLACK)
+    rtext(d, 1408, 60, "Licht-Menü", font(34), MID)
+
+    def button(key, big, small, inverted=False):
+        x0, y0, x1, y1 = BTN[key]
+        if inverted:
+            d.rounded_rectangle(BTN[key], radius=28, fill=BLACK)
+            col = WHITE
+        else:
+            d.rounded_rectangle(BTN[key], radius=28, outline=BLACK, width=6)
+            col = BLACK
+        cx = (x0 + x1) / 2
+        if small:
+            fb = font(150 if len(big) == 1 else 60, 700)
+            bh = 150 if len(big) == 1 else 60
+            yb = y0 + (y1 - y0) / 2 - bh / 2 - 40 - (20 if len(big) == 1 else 0)
+            ctext(d, cx, yb, big, fb, col)
+            ctext(d, cx, y1 - 80, small, font(42, 500), col)
+        else:
+            ctext(d, cx, (y0 + y1) / 2 - 36, big, font(58, 700), col)
+
+    button("minus", "−", "dunkler")
+    button("plus", "+", "heller")
+    button("done", "Fertig", "")
+    button("exit", "Beenden", "", inverted=True)
+    ctext(d, (MENU_X0 + LW) / 2, 900, "Schließt nach 10 s von selbst", font(36), MID)
+    ctext(d, (MENU_X0 + LW) / 2, 950, "„Beenden“ = zurück zur Kindle-Oberfläche", font(32), MID)
+    return finish(im)
+
+
+def level_sprite(n, maxn=24):
+    x0, y0, x1, y1 = LVL_BOX
+    im = Image.new("L", (x1 - x0, y1 - y0), WHITE)
+    d = ImageDraw.Draw(im)
+    t = "aus" if n == 0 else f"{n}"
+    d.text((0, 10), t, font=font(110, 700), fill=BLACK)
+    d.text((tw(d, t, font(110, 700)) + 14, 62), "/ 24" if n else "", font=font(44), fill=MID)
+    bx0, bw = 330, (x1 - x0) - 330
+    seg = bw / maxn
+    for i in range(maxn):
+        sx = bx0 + i * seg
+        h = 30 + 80 * (i + 1) / maxn
+        box = [sx + 3, 125 - h, sx + seg - 3, 125]
+        if i < n:
+            d.rectangle(box, fill=BLACK)
+        else:
+            d.rectangle(box, outline=LIGHT, width=3)
+    return finish(im)
+
+
 # ---------------------------------------------------------------- rotation to portrait
 def make_rotator(orientation):
     """Kindle lying with its USB port on the right ("usb_right") shows the landscape
@@ -363,16 +427,28 @@ def render(cfg, outdir):
     for name, x in bpos.items():
         layout.append((name, *rect(x, BAT_Y, bwidths[name], BAT_H)))
 
+    # light menu: overlay for the right panel, level sprites, hit boxes in landscape coords
+    img_rot(draw_menu().crop((px0, 0, LW, LH))).save(os.path.join(outdir, "menu.png"), optimize=True)
+    for n in range(25):
+        img_rot(level_sprite(n)).save(os.path.join(outdir, f"lv_{n}.png"), optimize=True)
+    x0, y0, x1, y1 = LVL_BOX
+    layout.append(("lvl", *rect(x0, y0, x1 - x0, y1 - y0)))
+    hits = [f"hit_{k} {a} {b} {c} {e}" for k, (a, b, c, e) in BTN.items()]
+    orient = "cw" if cfg.get("orientation", "usb_right") != "usb_left" else "ccw"
+
     # version of all sprites: the Kindle re-downloads them only when this changes
     import hashlib
     hsh = hashlib.sha1()
     for fn in sorted(os.listdir(outdir)):
-        if fn.startswith(("digit_", "colon", "lowbat", "b_", "bat_")):
+        if fn.startswith(("digit_", "colon", "lowbat", "b_", "bat_", "menu", "lv_")):
             hsh.update(open(os.path.join(outdir, fn), "rb").read())
 
     with open(os.path.join(outdir, "layout.txt"), "w", newline="\n") as fh:
         fh.write(f"pages {n_pan} 0\n")
         fh.write(f"ver {hsh.hexdigest()[:12]} 0\n")
+        fh.write(f"orient {orient} {LW}x{LH}\n")
+        for h in hits:
+            fh.write(h + "\n")
         for name, x, y in layout:
             fh.write(f"{name} {int(x)} {int(y)}\n")
     return panels, full

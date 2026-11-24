@@ -19,6 +19,12 @@ ROTATE_SEC=20
 LIGHT_DAY=""
 LIGHT_NIGHT=0
 
+# Touchscreen-Korrektur, nur falls Knöpfe im Licht-Menü falsch reagieren (0/1).
+# Welche Werte passen, steht nach ein paar Tipps in log.txt ("Tipp roh ...").
+TOUCH_SWAP=0
+TOUCH_FLIPX=0
+TOUCH_FLIPY=0
+
 # WLAN zwischen den Updates ausschalten (1 = ja, spart viel Akku)
 WIFI_OFF_BETWEEN=1
 

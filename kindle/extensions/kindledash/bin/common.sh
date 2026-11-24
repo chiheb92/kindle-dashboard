@@ -88,7 +88,9 @@ fetch() {
 	if [ "$VER" != "$(cat "$A/sprites.ver" 2>/dev/null)" ] || [ ! -f "$A/b_pct.png" ]; then
 		ok=1
 		for n in 0 1 2 3 4 5 6 7 8 9; do get "digit_$n.png" || ok=0; get "b_$n.png" || ok=0; done
-		for f in colon lowbat b_blank b_pct bat_0 bat_1 bat_2 bat_3 bat_4 bat_c; do get "$f.png" || ok=0; done
+		for f in colon lowbat b_blank b_pct bat_0 bat_1 bat_2 bat_3 bat_4 bat_c menu; do get "$f.png" || ok=0; done
+		n=0
+		while [ $n -le 24 ]; do get "lv_$n.png" || ok=0; n=$((n + 1)); done
 		[ $ok = 1 ] && echo "$VER" > "$A/sprites.ver"
 		log "Symbole geladen (Version $VER, ok=$ok)"
 	fi
@@ -146,15 +148,26 @@ draw_battery() {
 NPAGES=1
 load_layout() {
 	[ -f "$A/layout.txt" ] || return
-	while read -r k x y; do
+	while read -r k x y x1 y1; do
 		case "$k" in
 			pages) NPAGES=$x ;;
 			ver) VER=$x ;;
+			orient) ORIENT=$x ;;
+			hit_*) n=${k#hit_}; case "$n" in *[!a-z]*) ;; *) eval "H_$n=\"$x $y $x1 $y1\"" ;; esac ;;
 			*[!a-z0-9]*|'') ;;
 			*) eval "L_$k=\"$x $y\"" ;;
 		esac
 	done < "$A/layout.txt"
 }
+
+# Short sleep for responsive input polling: QPS naps per second
+if command -v usleep >/dev/null 2>&1; then
+	nap() { usleep 250000; }
+	QPS=4
+else
+	nap() { sleep 1; }
+	QPS=1
+fi
 
 # blit <file> <"x y"> [flash]: draw an image at a pixel offset without a full-screen refresh
 blit() {
