@@ -1,32 +1,33 @@
 name: Dashboard rendern
 
+# GitHub runs scheduled workflows unreliably (often hours late, sometimes not at all).
+# So one run keeps itself alive for almost 6 hours and renders every 15 minutes;
+# each new trigger simply replaces the running loop. The images are force-pushed to
+# the "gh-pages" branch (a single commit, no growing history), which GitHub Pages serves.
+
 on:
   schedule:
-    - cron: "*/30 * * * *"   # alle 30 Minuten (GitHub kann ein paar Minuten verzögern)
-  workflow_dispatch: {}        # manuell starten: Actions -> "Dashboard rendern" -> Run workflow
+    - cron: "7,37 * * * *"
+  workflow_dispatch: {}
   push:
     branches: [main]
     paths: ["config.json", "render/**", ".github/workflows/**"]
 
 permissions:
-  contents: write   # nur für den monatlichen Keep-alive-Commit
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: render-loop
   cancel-in-progress: true
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    timeout-minutes: 355
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -34,28 +35,41 @@ jobs:
 
       - run: pip install -r render/requirements.txt
 
-      - name: Bild erzeugen
-        run: |
-          mkdir -p site
-          cd render && python landscape.py --outdir ../site && cd ..   # dashboard.png, panel_N, digits, layout.txt
-          date -u +%s > site/timestamp.txt
-          cp render/index.html site/index.html
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - id: deploy
-        uses: actions/deploy-pages@v4
-
-      # GitHub pausiert zeitgesteuerte Workflows nach 60 Tagen ohne Commit.
-      # Einmal im Monat (am 1., erster Lauf nach Mitternacht UTC) ein leerer Commit hält ihn am Leben.
+      # GitHub pauses scheduled workflows after 60 days without a commit on the default branch.
       - name: Keep-alive
-        if: github.event_name == 'schedule'
         run: |
-          if [ "$(date -u +%d%H)" = "0100" ] && [ "$(date -u +%M)" -lt 30 ]; then
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 40 * 86400 )) ]; then
             git config user.name "dashboard-bot"
             git config user.email "dashboard-bot@users.noreply.github.com"
             git commit --allow-empty -m "keep-alive"
             git push
           fi
+
+      - name: Rendern und veröffentlichen (alle 15 min, ~5 h 50 min lang)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          end=$(( SECONDS + 5*3600 + 45*60 ))
+          while :; do
+            rm -rf site && mkdir site
+            if (cd render && python landscape.py --outdir ../site); then
+              date -u +%s > site/timestamp.txt
+              cp render/index.html site/index.html
+              touch site/.nojekyll
+              (
+                cd site
+                git init -q -b gh-pages
+                git config user.name "dashboard-bot"
+                git config user.email "dashboard-bot@users.noreply.github.com"
+                git add -A
+                git commit -q -m "Dashboard $(date -u +%FT%TZ)"
+                git push -q -f "https://x-access-token:${TOKEN}@github.com/${REPO}.git" gh-pages
+              ) && echo "veröffentlicht $(date -u +%T)" || echo "::warning::Veröffentlichen fehlgeschlagen"
+            else
+              echo "::warning::Rendern fehlgeschlagen"
+            fi
+            [ $SECONDS -ge $end ] && break
+            sleep 900
+          done
