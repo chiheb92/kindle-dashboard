@@ -30,6 +30,10 @@ TOUCH_FLIPY=0
 WIFI_WAIT_SEC=30
 WIFI_MAX_MIN=120
 
+# Sind die Daten älter als so viele Minuten, löst Antippen sofort ein Update aus
+# (statt das Licht-Menü zu öffnen). Praktisch, wenn du nach langer Zeit heimkommst.
+STALE_MIN=30
+
 # WLAN zwischen den Updates ausschalten (1 = ja, spart viel Akku)
 WIFI_OFF_BETWEEN=1
 

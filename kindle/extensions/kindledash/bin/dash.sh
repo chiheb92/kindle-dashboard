@@ -261,6 +261,7 @@ load_layout   # assets from an earlier run, if any
 batlog "start"
 FAILS=0
 NOWIFI=0
+LAST_OK=0
 while true; do
 	[ -f "$STOPF" ] && cleanup
 	[ -n "$STARTED" ] && batlog ""
@@ -280,6 +281,7 @@ while true; do
 			NOWIFI=0
 			if fetch; then
 				FAILS=0
+				LAST_OK=$(date +%s)
 				PAGE=1
 				log "Bild aktualisiert (Seiten: $NPAGES)"
 			else
@@ -319,9 +321,15 @@ while true; do
 		case "$WI" in
 			touch)
 				sleep 1
+				# Data is old (e.g. back home after a long time without Wi-Fi): a tap means
+				# "someone is here" -> update right now instead of opening the light menu.
+				AGE=$(( $(date +%s) - LAST_OK ))
+				if [ $AGE -gt $(( ${STALE_MIN:-30} * 60 )) ]; then
+					log "Tippen bei $((AGE / 60)) min alten Daten -> sofort aktualisieren"
+					NOWIFI=0
+					break
+				fi
 				light_menu
-				# offline? a tap also means "try Wi-Fi now" (e.g. hotspot just switched on)
-				[ "$NOWIFI" -gt 0 ] && { log "Tippen -> WLAN sofort erneut suchen"; break; }
 				;;
 			key) power_pressed ;;
 			stop) cleanup ;;
