@@ -25,6 +25,11 @@ TOUCH_SWAP=0
 TOUCH_FLIPX=0
 TOUCH_FLIPY=0
 
+# Ohne WLAN (z. B. Handy-Hotspot nicht in der Nähe): so lange höchstens auf eine Verbindung warten,
+# danach verdoppelt sich die Pause bis zur nächsten Suche (15, 30, 60 ... Minuten) bis zu diesem Maximum.
+WIFI_WAIT_SEC=30
+WIFI_MAX_MIN=120
+
 # WLAN zwischen den Updates ausschalten (1 = ja, spart viel Akku)
 WIFI_OFF_BETWEEN=1
 

@@ -260,6 +260,7 @@ fi
 load_layout   # assets from an earlier run, if any
 batlog "start"
 FAILS=0
+NOWIFI=0
 while true; do
 	[ -f "$STOPF" ] && cleanup
 	[ -n "$STARTED" ] && batlog ""
@@ -274,21 +275,38 @@ while true; do
 	if [ "$NIGHT" = "1" ]; then set_light "$LIGHT_NIGHT"; ROTATING=0; else set_light "$LIGHT_DAY"; ROTATING=1; fi
 
 	if [ "$NIGHT" = "0" ] || [ ! -f "$IMG" ]; then
-		if wifi_on && fetch; then
-			FAILS=0
-			PAGE=1
-			log "Bild aktualisiert (Seiten: $NPAGES)"
+		if wifi_on; then
+			if [ "$NOWIFI" -gt 0 ]; then log "WLAN wieder da nach $NOWIFI Fehlversuchen"; fi
+			NOWIFI=0
+			if fetch; then
+				FAILS=0
+				PAGE=1
+				log "Bild aktualisiert (Seiten: $NPAGES)"
+			else
+				FAILS=$((FAILS + 1))
+				log "Download fehlgeschlagen ($FAILS)"
+			fi
 		else
-			FAILS=$((FAILS + 1))
-			log "Update fehlgeschlagen ($FAILS)"
+			# no network (e.g. phone hotspot not around): search less and less often
+			NOWIFI=$((NOWIFI + 1))
+			FAILS=0
 		fi
 		[ "$WIFI_OFF_BETWEEN" = "1" ] && wifi_off
 		B=$(battery)
 		[ -f "$IMG" ] && redraw
 	fi
 
-	# after a failure retry sooner (2 min), else the normal interval
-	if [ $FAILS -gt 0 ] && [ $FAILS -lt 3 ]; then WAIT=120; else WAIT=$((REFRESH_MIN * 60)); fi
+	# next update: normal interval; a failed download with Wi-Fi is retried after 2 min (twice);
+	# without Wi-Fi the interval doubles each time (15, 30, 60 min ...) up to WIFI_MAX_MIN
+	WAIT=$((REFRESH_MIN * 60))
+	if [ $FAILS -gt 0 ] && [ $FAILS -lt 3 ]; then
+		WAIT=120
+	elif [ "$NOWIFI" -gt 0 ]; then
+		i=1
+		while [ $i -lt "$NOWIFI" ] && [ $WAIT -lt $(( ${WIFI_MAX_MIN:-120} * 60 )) ]; do WAIT=$((WAIT * 2)); i=$((i + 1)); done
+		[ $WAIT -gt $(( ${WIFI_MAX_MIN:-120} * 60 )) ] && WAIT=$(( ${WIFI_MAX_MIN:-120} * 60 ))
+		log "Kein WLAN ($NOWIFI. Mal) - nächster Versuch in $((WAIT / 60)) min"
+	fi
 
 	# wait until the next update; in between only wake up for the clock, rotation and input
 	END=$(( $(date +%s) + WAIT ))
@@ -299,7 +317,12 @@ while true; do
 		next_wait $LEFT
 		wait_input $W
 		case "$WI" in
-			touch) sleep 1; light_menu ;;
+			touch)
+				sleep 1
+				light_menu
+				# offline? a tap also means "try Wi-Fi now" (e.g. hotspot just switched on)
+				[ "$NOWIFI" -gt 0 ] && { log "Tippen -> WLAN sofort erneut suchen"; break; }
+				;;
 			key) power_pressed ;;
 			stop) cleanup ;;
 		esac

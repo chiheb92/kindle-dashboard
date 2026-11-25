@@ -42,12 +42,13 @@ battery() {
 wifi_on() {
 	lipc-set-prop com.lab126.cmd wirelessEnable 1 2>/dev/null
 	i=0
-	while [ $i -lt 45 ]; do
+	while [ $i -lt "${WIFI_WAIT_SEC:-30}" ]; do
 		[ "$(lipc-get-prop com.lab126.wifid cmState 2>/dev/null)" = "CONNECTED" ] && return 0
 		sleep 1
 		i=$((i + 1))
 	done
-	log "WLAN: keine Verbindung nach 45 s (cmState=$(lipc-get-prop com.lab126.wifid cmState 2>/dev/null))"
+	log "WLAN: keine Verbindung nach ${WIFI_WAIT_SEC:-30} s (cmState=$(lipc-get-prop com.lab126.wifid cmState 2>/dev/null))"
+	wifi_off
 	return 1
 }
 
