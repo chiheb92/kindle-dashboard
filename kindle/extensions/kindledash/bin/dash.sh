@@ -29,49 +29,67 @@ PAGE=1
 ROTATING=1
 B=""
 
-# Called once per second while waiting: clock, battery (every minute), panel rotation.
-tick() {
+# Things that are due after a wait: clock (each minute), battery (each minute), panel rotation.
+NEXT_ROT=0
+NEXT_BAT=0
+due() {
+	NOW=$(date +%s)
 	draw_clock
-	[ $(($1 % 60)) -eq 0 ] && draw_battery
-	[ "$ROTATING" = "1" ] || return
-	[ "${NPAGES:-1}" -gt 1 ] || return
-	[ "${ROTATE_SEC:-0}" -gt 0 ] || return
-	[ $(($1 % ROTATE_SEC)) -eq 0 ] || return
-	PAGE=$((PAGE % NPAGES + 1))
-	blit "$A/panel_$PAGE.png" "$L_panel" flash
+	if [ "$NOW" -ge "$NEXT_BAT" ]; then
+		draw_battery
+		NEXT_BAT=$((NOW + 60))
+	fi
+	if [ "$ROTATING" = "1" ] && [ "${NPAGES:-1}" -gt 1 ] && [ "${ROTATE_SEC:-0}" -gt 0 ]; then
+		if [ "$NOW" -ge "$NEXT_ROT" ]; then
+			[ "$NEXT_ROT" -gt 0 ] && { PAGE=$((PAGE % NPAGES + 1)); blit "$A/panel_$PAGE.png" "$L_panel" flash; }
+			NEXT_ROT=$((NOW + ROTATE_SEC))
+		fi
+	fi
 }
 
-# Wait up to $1 seconds for input. Sets WI to touch | key | stop | timeout.
-# A touch leaves its first raw events in $A/touch.bin.
-wait_input() {
-	secs=$1
-	WI=timeout
-	rm -f "$A/touch.bin"
-	TP=""
-	if [ -n "$TOUCHDEV" ]; then
-		dd if="$TOUCHDEV" of="$A/touch.bin" bs=16 count=6 2>/dev/null &
-		TP=$!
+# Seconds until the next due() work (next minute / next rotation), at most $1.
+next_wait() {
+	NOW=$(date +%s)
+	W=$1
+	m=$((60 - NOW % 60))
+	[ $m -lt $W ] && W=$m
+	if [ "$ROTATING" = "1" ] && [ "${NPAGES:-1}" -gt 1 ] && [ "${ROTATE_SEC:-0}" -gt 0 ]; then
+		r=$((NEXT_ROT - NOW))
+		[ $r -lt $W ] && W=$r
 	fi
-	KP=""
+	[ $W -lt 1 ] && W=1
+}
+
+# Wait up to $1 seconds for input WITHOUT polling: the shell blocks on a single
+# "sleep" which the input readers kill when something happens. This lets the CPU idle.
+# Sets WI to touch | key | stop | timeout. A touch leaves its raw events in $A/touch.bin.
+WN=0
+wait_input() {
+	WI=timeout
+	WN=$((WN + 1))
+	F="$A/wi.$WN"
+	rm -f "$A"/wi.* "$A/touch.bin"
+	sleep "$1" &
+	SP=$!
+	echo $SP > "$A/sleep.pid"
+	HP=""
+	if [ -n "$TOUCHDEV" ]; then
+		( dd if="$TOUCHDEV" of="$A/touch.bin" bs=16 count=6 2>/dev/null & echo $! > "$A/dd.t"; wait $!; echo touch > "$F"; kill $SP 2>/dev/null ) &
+		HP="$HP $!"
+	fi
 	for k in $KEYDEVS; do
-		dd if="$k" of=/dev/null bs=16 count=1 2>/dev/null &
-		KP="$KP $!"
+		( dd if="$k" of=/dev/null bs=16 count=1 2>/dev/null & echo $! > "$A/dd.${k##*/}"; wait $!; echo key > "$F"; kill $SP 2>/dev/null ) &
+		HP="$HP $!"
 	done
-	q=0
-	t=0
-	while [ $t -lt "$secs" ]; do
-		nap
-		q=$((q + 1))
-		if [ -n "$TP" ] && ! kill -0 $TP 2>/dev/null; then WI=touch; break; fi
-		for p in $KP; do kill -0 $p 2>/dev/null || WI=key; done
-		[ "$WI" = key ] && break
-		[ -f "$STOPF" ] && { WI=stop; break; }
-		if [ $((q % QPS)) -eq 0 ]; then
-			t=$((t + 1))
-			tick $t
-		fi
+	wait $SP 2>/dev/null
+	[ -f "$F" ] && WI=$(head -n 1 "$F")
+	[ -f "$STOPF" ] && WI=stop
+	# stop the readers that did not fire: their dd first, then the helper shells
+	for f in "$A"/dd.*; do
+		[ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null
+		rm -f "$f"
 	done
-	kill $TP $KP 2>/dev/null
+	kill $HP 2>/dev/null
 }
 
 # Touch position in landscape coordinates -> TX TY (or -1 -1)
@@ -174,6 +192,7 @@ light_menu() {
 	done
 	ROTATING=$R
 	blit "$A/panel_$PAGE.png" "$L_panel" flash
+	NEXT_ROT=$(( $(date +%s) + ${ROTATE_SEC:-20} ))
 	log "Licht-Menü geschlossen (Licht $LIGHT_NOW)"
 }
 
@@ -199,8 +218,9 @@ redraw() {
 cleanup() {
 	log "Dashboard wird beendet"
 	batlog "ende"
-	kill $TP $KP 2>/dev/null
+	for f in "$A"/dd.*; do [ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null; done
 	lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
+	[ -n "$GOV_ORIG" ] && echo "$GOV_ORIG" > $GOV 2>/dev/null
 	lipc-set-prop com.lab126.cmd wirelessEnable 1 2>/dev/null
 	[ -n "$LIGHT_ORIG" ] && lipc-set-prop com.lab126.powerd flIntensity "$LIGHT_ORIG" 2>/dev/null
 	if [ "$FRAMEWORKLESS" = "1" ]; then
@@ -222,6 +242,11 @@ cleanup() {
 }
 
 lipc-set-prop com.lab126.powerd preventScreenSaver 1 2>/dev/null
+
+# CPU: lowest clock is plenty for blitting images
+GOV=/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+GOV_ORIG=$(cat $GOV 2>/dev/null)
+echo powersave > $GOV 2>/dev/null && log "CPU-Takt: powersave (vorher ${GOV_ORIG:-?})"
 
 if [ "$FRAMEWORKLESS" = "1" ]; then
 	log "Halte Kindle-Oberfläche an"
@@ -263,19 +288,21 @@ while true; do
 	fi
 
 	# after a failure retry sooner (2 min), else the normal interval
-	if [ $FAILS -gt 0 ] && [ $FAILS -lt 4 ]; then WAIT=120; else WAIT=$((REFRESH_MIN * 60)); fi
+	if [ $FAILS -gt 0 ] && [ $FAILS -lt 3 ]; then WAIT=120; else WAIT=$((REFRESH_MIN * 60)); fi
 
-	# wait until the next update, handling taps and key presses meanwhile
+	# wait until the next update; in between only wake up for the clock, rotation and input
 	END=$(( $(date +%s) + WAIT ))
+	NEXT_ROT=$(( $(date +%s) + ${ROTATE_SEC:-20} ))
 	while :; do
 		LEFT=$(( END - $(date +%s) ))
 		[ $LEFT -le 0 ] && break
-		wait_input $LEFT
+		next_wait $LEFT
+		wait_input $W
 		case "$WI" in
 			touch) sleep 1; light_menu ;;
 			key) power_pressed ;;
 			stop) cleanup ;;
-			*) break ;;
 		esac
+		due
 	done
 done

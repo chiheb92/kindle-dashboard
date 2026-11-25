@@ -1,8 +1,9 @@
 name: Dashboard rendern
 
-# GitHub runs scheduled workflows unreliably (often hours late, sometimes not at all).
-# So one run keeps itself alive for almost 6 hours and renders every 15 minutes;
-# each new trigger simply replaces the running loop. The images are force-pushed to
+# GitHub runs scheduled workflows unreliably (in practice only every ~7-8 hours here).
+# So one run keeps itself alive for ~5.5 hours, renders every 15 minutes, and then
+# starts its own successor via workflow_dispatch (allowed with GITHUB_TOKEN).
+# Each new trigger simply replaces the running loop. The images are force-pushed to
 # the "gh-pages" branch (a single commit, no growing history), which GitHub Pages serves.
 
 on:
@@ -15,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  actions: write     # to start the next run when this one ends
 
 concurrency:
   group: render-loop
@@ -51,7 +53,7 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          end=$(( SECONDS + 5*3600 + 45*60 ))
+          end=$(( SECONDS + 5*3600 + 30*60 ))
           while :; do
             rm -rf site && mkdir site
             if (cd render && python landscape.py --outdir ../site); then
@@ -73,3 +75,12 @@ jobs:
             [ $SECONDS -ge $end ] && break
             sleep 900
           done
+
+      - name: Nächsten Lauf starten
+        if: success()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          curl -fsS -X POST             -H "Authorization: Bearer ${TOKEN}"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/${REPO}/actions/workflows/dashboard.yml/dispatches"             -d '{"ref":"main"}'
+          echo "Nachfolger gestartet"
