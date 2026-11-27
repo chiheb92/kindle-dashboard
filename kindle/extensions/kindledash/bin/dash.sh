@@ -1,6 +1,7 @@
 #!/bin/sh
 # Dashboard main loop (landscape design). Started detached by start.sh.
-#  - tap the screen once: light menu (darker / brighter / done / exit)
+#  - the Kindle sleeps between minutes; press the power button once to wake it for 30 s,
+#    then tap the screen: light menu (darker / brighter / done / exit)
 #  - press the power button twice: leave the dashboard
 
 trap '' HUP TERM   # survive stopping the Kindle UI
@@ -42,7 +43,7 @@ due() {
 	if [ "$ROTATING" = "1" ] && [ "${NPAGES:-1}" -gt 1 ] && [ "${ROTATE_SEC:-0}" -gt 0 ]; then
 		if [ "$NOW" -ge "$NEXT_ROT" ]; then
 			[ "$NEXT_ROT" -gt 0 ] && { PAGE=$((PAGE % NPAGES + 1)); blit "$A/panel_$PAGE.png" "$L_panel" flash; }
-			NEXT_ROT=$((NOW + ROTATE_SEC))
+			NEXT_ROT=$((NOW + ${ROT_EFF:-$ROTATE_SEC} - 5))
 		fi
 	fi
 }
@@ -128,6 +129,56 @@ hit() {
 	done
 }
 
+# ---- real sleep (suspend to RAM) with an RTC wake-up alarm
+# The RTC on the PMIC (rtc1 on the PW3) can wake the device; rtc0 is the fallback.
+RTC=""
+for r in /sys/class/rtc/rtc1 /sys/class/rtc/rtc0; do
+	[ -e "$r/wakealarm" ] && { RTC=$r; break; }
+done
+[ "${SUSPEND:-1}" = 1 ] && [ -z "$RTC" ] && { log "Kein RTC-Wecker gefunden -> ohne Ruhemodus"; SUSPEND=0; }
+log "Ruhemodus: ${SUSPEND:-1} (Wecker: ${RTC:-keiner})"
+SUSP_FAILS=0
+
+# Sleep until epoch $1. Returns 0 when woken by the alarm, 1 when woken early
+# (power button) or when input arrived while staying awake (then WI is set).
+sleep_until() {
+	D=$(( $1 - $(date +%s) ))
+	[ $D -lt 1 ] && return 0
+	if [ "${SUSPEND:-1}" != 1 ] || [ $D -lt 8 ]; then
+		wait_input $D
+		[ "$WI" = timeout ] && return 0
+		return 1
+	fi
+	wifi_off
+	sleep 2                       # let the e-ink update finish before the controller sleeps
+	echo 0 > "$RTC/wakealarm" 2>/dev/null
+	echo $(( $(cat "$RTC/since_epoch") + D - 2 )) > "$RTC/wakealarm" 2>/dev/null
+	T0=$(date +%s)
+	if ! echo mem > /sys/power/state 2>/dev/null; then
+		SUSP_FAILS=$((SUSP_FAILS + 1))
+		log "Ruhemodus fehlgeschlagen ($SUSP_FAILS)"
+		[ $SUSP_FAILS -ge 3 ] && { SUSPEND=0; log "Ruhemodus abgeschaltet, bleibe wach"; }
+		wait_input $(( $1 - $(date +%s) ))
+		[ "$WI" = timeout ] && return 0
+		return 1
+	fi
+	SUSP_FAILS=0
+	T1=$(date +%s)
+	echo 0 > "$RTC/wakealarm" 2>/dev/null
+	if [ $T1 -lt $(( $1 - 6 )) ]; then
+		log "Aufgeweckt nach $((T1 - T0)) s (Taste)"
+		WI=user
+		return 1
+	fi
+	return 0
+}
+
+# Seconds until NIGHT_END:00
+secs_to_morning() {
+	h=$(date +%H | sed 's/^0//'); m=$(date +%M | sed 's/^0//'); sc=$(date +%S | sed 's/^0//')
+	echo $(( ((NIGHT_END - ${h:-0} + 24) % 24) * 3600 - ${m:-0} * 60 - ${sc:-0} ))
+}
+
 # ---- light
 LIGHT_ORIG=$(lipc-get-prop com.lab126.powerd flIntensity 2>/dev/null)
 LIGHT_NOW=$LIGHT_ORIG
@@ -201,7 +252,7 @@ power_pressed() {
 	say "Nochmal Power-Taste = Beenden"
 	sleep 1
 	wait_input 6
-	[ "$WI" = key ] && cleanup
+	{ [ "$WI" = key ] || [ "$WI" = user ]; } && cleanup
 	redraw
 }
 
@@ -218,6 +269,7 @@ redraw() {
 cleanup() {
 	log "Dashboard wird beendet"
 	batlog "ende"
+	[ -n "$RTC" ] && echo 0 > "$RTC/wakealarm" 2>/dev/null
 	for f in "$A"/dd.*; do [ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null; done
 	lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
 	[ -n "$GOV_ORIG" ] && echo "$GOV_ORIG" > $GOV 2>/dev/null
@@ -310,30 +362,69 @@ while true; do
 		log "Kein WLAN ($NOWIFI. Mal) - nächster Versuch in $((WAIT / 60)) min"
 	fi
 
-	# wait until the next update; in between only wake up for the clock, rotation and input
+	# Night: one long sleep until the morning (no updates, no clock)
+	if [ "$NIGHT" = 1 ] && [ "${SUSPEND:-1}" = 1 ]; then
+		WAIT=$(secs_to_morning)
+		[ $WAIT -lt 60 ] && WAIT=60
+		batlog "nacht"
+		log "Nachtruhe: schlafe $((WAIT / 60)) min"
+	fi
+
+	# Wait until the next update. Awake only briefly once a minute (clock, panel, battery)
+	# and for 30 s after the power button; otherwise the Kindle really sleeps.
 	END=$(( $(date +%s) + WAIT ))
-	NEXT_ROT=$(( $(date +%s) + ${ROTATE_SEC:-20} ))
+	ROT_EFF=${ROTATE_SEC:-20}
+	[ "${SUSPEND:-1}" = 1 ] && [ "$ROT_EFF" -lt 60 ] && ROT_EFF=60
+	NEXT_ROT=$(( $(date +%s) + ROT_EFF - 5 ))
+	AWAKE_UNTIL=0
 	while :; do
-		LEFT=$(( END - $(date +%s) ))
+		NOW=$(date +%s)
+		LEFT=$(( END - NOW ))
 		[ $LEFT -le 0 ] && break
-		next_wait $LEFT
-		wait_input $W
+		if [ $NOW -lt $AWAKE_UNTIL ] || [ "${SUSPEND:-1}" != 1 ]; then
+			# awake: react to taps (light menu) and the power button immediately
+			next_wait $LEFT
+			[ $NOW -lt $AWAKE_UNTIL ] && [ $((AWAKE_UNTIL - NOW)) -lt $W ] && W=$((AWAKE_UNTIL - NOW))
+			# safety net: should the system put itself to sleep meanwhile (e.g. powerd reacting
+			# to the power button), this alarm still wakes it up in time
+			if [ "${SUSPEND:-1}" = 1 ] && [ -n "$RTC" ]; then
+				echo 0 > "$RTC/wakealarm" 2>/dev/null
+				echo $(( $(cat "$RTC/since_epoch") + W + 3 )) > "$RTC/wakealarm" 2>/dev/null
+			fi
+			wait_input $W
+		else
+			# asleep until the next minute (at night: until the morning)
+			if [ "$NIGHT" = 1 ]; then TGT=$END; else TGT=$(( NOW - NOW % 60 + 60 )); [ $TGT -gt $END ] && TGT=$END; fi
+			if sleep_until $TGT; then WI=timeout; fi
+			# a long nap that ends far too late points at a hang: log it
+			[ $(( $(date +%s) - TGT )) -gt 120 ] && log "Achtung: $(( $(date +%s) - TGT )) s zu spät aufgewacht"
+		fi
 		case "$WI" in
+			user)
+				AWAKE_UNTIL=$(( $(date +%s) + ${AWAKE_SEC:-30} ))
+				AGE=$(( $(date +%s) - LAST_OK ))
+				if [ $AGE -gt $(( ${STALE_MIN:-30} * 60 )) ] && [ "$NIGHT" = 0 ]; then
+					log "Aufgeweckt bei $((AGE / 60)) min alten Daten -> sofort aktualisieren"
+					NOWIFI=0
+					break
+				fi
+				[ "$NIGHT" = 1 ] && redraw
+				;;
 			touch)
 				sleep 1
-				# Data is old (e.g. back home after a long time without Wi-Fi): a tap means
-				# "someone is here" -> update right now instead of opening the light menu.
+				AWAKE_UNTIL=$(( $(date +%s) + ${AWAKE_SEC:-30} ))
 				AGE=$(( $(date +%s) - LAST_OK ))
-				if [ $AGE -gt $(( ${STALE_MIN:-30} * 60 )) ]; then
+				if [ $AGE -gt $(( ${STALE_MIN:-30} * 60 )) ] && [ "$NIGHT" = 0 ]; then
 					log "Tippen bei $((AGE / 60)) min alten Daten -> sofort aktualisieren"
 					NOWIFI=0
 					break
 				fi
 				light_menu
+				AWAKE_UNTIL=$(( $(date +%s) + ${AWAKE_SEC:-30} ))
 				;;
-			key) power_pressed ;;
+			key) power_pressed; AWAKE_UNTIL=$(( $(date +%s) + ${AWAKE_SEC:-30} )) ;;
 			stop) cleanup ;;
 		esac
-		due
+		[ "$NIGHT" = 1 ] || due
 	done
 done

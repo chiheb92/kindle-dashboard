@@ -10,6 +10,12 @@ REFRESH_MIN=15
 NIGHT_START=23
 NIGHT_END=6
 
+# Echter Ruhemodus (1 = ja): Der Kindle schläft zwischen den Minuten und nachts durch.
+# Spart sehr viel Akku. Dann gilt: einmal Power-Taste = 30 s wach (Licht-Menü per Tippen),
+# Seiten wechseln höchstens einmal pro Minute. 0 = immer wach wie vorher.
+SUSPEND=1
+AWAKE_SEC=30
+
 # Kurs-Seiten (Krypto/Aktien) alle wie viele Sekunden wechseln (0 = aus).
 # Nachts wird nicht gewechselt.
 ROTATE_SEC=20
