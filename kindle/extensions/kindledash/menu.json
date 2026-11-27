@@ -1,28 +1,34 @@
 {
 	"items": [
-	{
-		"name": "Dashboard",
-		"priority": -999,
-		"items": [
 		{
-			"name": "Dashboard starten",
-			"priority": 1,
-			"action": "bin/start.sh",
-			"exitmenu": true
-		},
-		{
-			"name": "Einmal anzeigen (Test)",
-			"priority": 2,
-			"action": "bin/once.sh",
-			"exitmenu": true
-		},
-		{
-			"name": "Dashboard beenden",
-			"priority": 3,
-			"action": "bin/stop.sh",
-			"exitmenu": true
+			"name": "Dashboard",
+			"priority": -999,
+			"items": [
+				{
+					"name": "Dashboard starten",
+					"priority": 1,
+					"action": "bin/start.sh",
+					"exitmenu": true
+				},
+				{
+					"name": "Einmal anzeigen (Test)",
+					"priority": 2,
+					"action": "bin/once.sh",
+					"exitmenu": true
+				},
+				{
+					"name": "Dashboard beenden",
+					"priority": 3,
+					"action": "bin/stop.sh",
+					"exitmenu": true
+				},
+				{
+					"name": "Wecker-Test (Ruhemodus)",
+					"priority": 4,
+					"action": "bin/waketest.sh",
+					"exitmenu": true
+				}
+			]
 		}
-		]
-	}
 	]
 }

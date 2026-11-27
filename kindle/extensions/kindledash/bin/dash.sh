@@ -135,29 +135,44 @@ RTC=""
 for r in /sys/class/rtc/rtc1 /sys/class/rtc/rtc0; do
 	[ -e "$r/wakealarm" ] && { RTC=$r; break; }
 done
-[ "${SUSPEND:-1}" = 1 ] && [ -z "$RTC" ] && { log "Kein RTC-Wecker gefunden -> ohne Ruhemodus"; SUSPEND=0; }
-log "Ruhemodus: ${SUSPEND:-1} (Wecker: ${RTC:-keiner})"
+if [ -z "$RTC" ]; then
+	{ [ "${SUSPEND:-0}" = 1 ] || [ "${NIGHT_SLEEP:-0}" = 1 ]; } && log "Kein RTC-Wecker gefunden -> ohne Ruhemodus"
+	SUSPEND=0; NIGHT_SLEEP=0
+fi
+log "Ruhemodus tagsüber: ${SUSPEND:-0}, nachts: ${NIGHT_SLEEP:-0} (Wecker: ${RTC:-keiner})"
 SUSP_FAILS=0
+START_AWAKE_UNTIL=$(( $(date +%s) + ${AWAKE_START_SEC:-120} ))
+
+# May the Kindle sleep right now?
+can_sleep() {
+	[ "$(date +%s)" -lt "$START_AWAKE_UNTIL" ] && return 1
+	if [ "$NIGHT" = 1 ]; then
+		[ "${NIGHT_SLEEP:-0}" = 1 ] || [ "${SUSPEND:-0}" = 1 ]
+	else
+		[ "${SUSPEND:-0}" = 1 ]
+	fi
+}
 
 # Sleep until epoch $1. Returns 0 when woken by the alarm, 1 when woken early
 # (power button) or when input arrived while staying awake (then WI is set).
 sleep_until() {
 	D=$(( $1 - $(date +%s) ))
 	[ $D -lt 1 ] && return 0
-	if [ "${SUSPEND:-1}" != 1 ] || [ $D -lt 8 ]; then
+	if ! can_sleep || [ $D -lt 8 ]; then
 		wait_input $D
 		[ "$WI" = timeout ] && return 0
 		return 1
 	fi
 	wifi_off
 	sleep 2                       # let the e-ink update finish before the controller sleeps
+	[ -w "$RTC/device/power/wakeup" ] && echo enabled > "$RTC/device/power/wakeup" 2>/dev/null
 	echo 0 > "$RTC/wakealarm" 2>/dev/null
 	echo $(( $(cat "$RTC/since_epoch") + D - 2 )) > "$RTC/wakealarm" 2>/dev/null
 	T0=$(date +%s)
 	if ! echo mem > /sys/power/state 2>/dev/null; then
 		SUSP_FAILS=$((SUSP_FAILS + 1))
 		log "Ruhemodus fehlgeschlagen ($SUSP_FAILS)"
-		[ $SUSP_FAILS -ge 3 ] && { SUSPEND=0; log "Ruhemodus abgeschaltet, bleibe wach"; }
+		[ $SUSP_FAILS -ge 3 ] && { SUSPEND=0; NIGHT_SLEEP=0; log "Ruhemodus abgeschaltet, bleibe wach"; }
 		wait_input $(( $1 - $(date +%s) ))
 		[ "$WI" = timeout ] && return 0
 		return 1
@@ -313,7 +328,8 @@ load_layout   # assets from an earlier run, if any
 batlog "start"
 FAILS=0
 NOWIFI=0
-LAST_OK=0
+# age of the data: the image already on the device counts (otherwise "infinitely old")
+LAST_OK=$(stat -c %Y "$IMG" 2>/dev/null || date +%s)
 while true; do
 	[ -f "$STOPF" ] && cleanup
 	[ -n "$STARTED" ] && batlog ""
@@ -363,7 +379,7 @@ while true; do
 	fi
 
 	# Night: one long sleep until the morning (no updates, no clock)
-	if [ "$NIGHT" = 1 ] && [ "${SUSPEND:-1}" = 1 ]; then
+	if [ "$NIGHT" = 1 ] && { [ "${NIGHT_SLEEP:-0}" = 1 ] || [ "${SUSPEND:-0}" = 1 ]; }; then
 		WAIT=$(secs_to_morning)
 		[ $WAIT -lt 60 ] && WAIT=60
 		batlog "nacht"
@@ -374,20 +390,20 @@ while true; do
 	# and for 30 s after the power button; otherwise the Kindle really sleeps.
 	END=$(( $(date +%s) + WAIT ))
 	ROT_EFF=${ROTATE_SEC:-20}
-	[ "${SUSPEND:-1}" = 1 ] && [ "$ROT_EFF" -lt 60 ] && ROT_EFF=60
+	[ "$NIGHT" = 0 ] && [ "${SUSPEND:-0}" = 1 ] && [ "$ROT_EFF" -lt 60 ] && ROT_EFF=60
 	NEXT_ROT=$(( $(date +%s) + ROT_EFF - 5 ))
 	AWAKE_UNTIL=0
 	while :; do
 		NOW=$(date +%s)
 		LEFT=$(( END - NOW ))
 		[ $LEFT -le 0 ] && break
-		if [ $NOW -lt $AWAKE_UNTIL ] || [ "${SUSPEND:-1}" != 1 ]; then
+		if [ $NOW -lt $AWAKE_UNTIL ] || ! can_sleep; then
 			# awake: react to taps (light menu) and the power button immediately
 			next_wait $LEFT
 			[ $NOW -lt $AWAKE_UNTIL ] && [ $((AWAKE_UNTIL - NOW)) -lt $W ] && W=$((AWAKE_UNTIL - NOW))
 			# safety net: should the system put itself to sleep meanwhile (e.g. powerd reacting
 			# to the power button), this alarm still wakes it up in time
-			if [ "${SUSPEND:-1}" = 1 ] && [ -n "$RTC" ]; then
+			if can_sleep && [ -n "$RTC" ]; then
 				echo 0 > "$RTC/wakealarm" 2>/dev/null
 				echo $(( $(cat "$RTC/since_epoch") + W + 3 )) > "$RTC/wakealarm" 2>/dev/null
 			fi
@@ -425,6 +441,7 @@ while true; do
 			key) power_pressed; AWAKE_UNTIL=$(( $(date +%s) + ${AWAKE_SEC:-30} )) ;;
 			stop) cleanup ;;
 		esac
-		[ "$NIGHT" = 1 ] || due
+		# clock/panel/battery - except during a night sleep (nobody is looking)
+		if [ "$NIGHT" = 1 ] && can_sleep; then :; else due; fi
 	done
 done
