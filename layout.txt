@@ -1,0 +1,20 @@
+pages 4 0
+ver af58262694c8 0
+orient cw 1448x1072
+hit_minus 603 330 993 590
+hit_plus 1018 330 1408 590
+hit_done 603 630 993 850
+hit_exit 1018 630 1408 850
+panel 0 563
+clock0 857 40
+clock1 857 150
+clock2 857 303
+clock3 857 413
+colon 857 260
+lowbat 56 30
+bat 48 454
+bpct 48 406
+bd0 48 337
+bd1 48 360
+bd2 48 383
+lvl 782 603
