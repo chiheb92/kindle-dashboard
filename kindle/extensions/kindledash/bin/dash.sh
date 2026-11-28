@@ -324,12 +324,19 @@ if [ "$FRAMEWORKLESS" = "1" ]; then
 	say "Dashboard wird geladen..."
 fi
 
-load_layout   # assets from an earlier run, if any
+# show the last known dashboard right away (from /tmp or the saved copy)
+if restore_cache; then
+	load_layout
+	redraw
+	log "Startbild angezeigt"
+else
+	load_layout
+fi
 batlog "start"
 FAILS=0
 NOWIFI=0
-# age of the data: the image already on the device counts (otherwise "infinitely old")
-LAST_OK=$(stat -c %Y "$IMG" 2>/dev/null || date +%s)
+# age of the data: the image already on the device counts; no image at all = very old
+LAST_OK=$(stat -c %Y "$IMG" 2>/dev/null || echo 0)
 while true; do
 	[ -f "$STOPF" ] && cleanup
 	[ -n "$STARTED" ] && batlog ""
@@ -350,6 +357,7 @@ while true; do
 			if fetch; then
 				FAILS=0
 				LAST_OK=$(date +%s)
+				save_cache
 				PAGE=1
 				log "Bild aktualisiert (Seiten: $NPAGES)"
 			else
@@ -371,6 +379,11 @@ while true; do
 	WAIT=$((REFRESH_MIN * 60))
 	if [ $FAILS -gt 0 ] && [ $FAILS -lt 3 ]; then
 		WAIT=120
+	elif [ "$NOWIFI" -gt 0 ] && [ ! -f "$IMG" ]; then
+		WAIT=120
+		eips -c >/dev/null 2>&1
+		say "Kein WLAN - Hotspot einschalten. Neuer Versuch in 2 min, Antippen = sofort."
+		log "Kein WLAN und noch kein Bild - neuer Versuch in 2 min"
 	elif [ "$NOWIFI" -gt 0 ]; then
 		i=1
 		while [ $i -lt "$NOWIFI" ] && [ $WAIT -lt $(( ${WIFI_MAX_MIN:-120} * 60 )) ]; do WAIT=$((WAIT * 2)); i=$((i + 1)); done

@@ -18,6 +18,23 @@ mkdir -p "$A"
 
 log() {
 	echo "$(date '+%d.%m. %H:%M:%S') $*" >> "$LOG"
+	sync   # survive a forced restart (power button held)
+}
+
+# Last good images are also kept on the user partition, so after a restart
+# the dashboard can show something immediately, even without Wi-Fi.
+CACHE="$DIR/cache"
+save_cache() {
+	mkdir -p "$CACHE"
+	cp -pf "$A"/*.png "$A"/layout.txt "$A"/sprites.ver "$CACHE"/ 2>/dev/null
+	sync
+}
+restore_cache() {
+	[ -f "$IMG" ] && return 0
+	[ -f "$CACHE/dashboard.png" ] || return 1
+	cp -pf "$CACHE"/* "$A"/ 2>/dev/null
+	log "Letztes Bild aus dem Speicher geladen"
+	return 0
 }
 
 # keep the log small
